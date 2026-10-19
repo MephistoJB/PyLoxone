@@ -9,7 +9,8 @@
   "issue_tracker": "https://github.com/JoDehli/PyLoxone/issues",
   "requirements": [
     "websockets>=14",
-    "pycryptodome"
+    "pycryptodome",
+    "defusedxml==0.7.1"
   ],
   "version": "0.9.22"
 }
