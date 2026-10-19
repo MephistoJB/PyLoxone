@@ -131,8 +131,7 @@ class LoxoneCoordinator(DataUpdateCoordinator):
                             CONF_HARDWARE_BATTERY_INTERVAL,
                             DEFAULT_HARDWARE_BATTERY_INTERVAL,
                         )
-                    )
-                    * 60,
+                    ),
                 )
                 self.hardware.push_connected = lambda: bool(
                     self.api and self.api.is_connected
