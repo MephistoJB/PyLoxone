@@ -1075,6 +1075,7 @@ async def async_setup_entry(hass, config_entry):
     ]
 
     await start_event()
+    coordinator.async_start_hardware_recovery()
 
     return True
 

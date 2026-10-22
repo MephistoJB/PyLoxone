@@ -1863,7 +1863,8 @@ class TestTokenChangeCallback:
         assert seen[0]["valid_until"] == 9999999999
         assert seen[0]["hash_alg"] == "SHA1"
 
-    def test_signal_async_callback_spawns_task(self, conn):
+    @pytest.mark.asyncio
+    async def test_signal_async_callback_spawns_task(self, conn):
         """An async callback is detected via ``iscoroutine``;
         the coroutine is handed to ``_spawn_task`` so the
         caller isn't blocked and any exception is logged via
@@ -1892,6 +1893,7 @@ class TestTokenChangeCallback:
         call = spawn.call_args
         assert call[0][0].__class__.__name__ == "coroutine"
         assert call[1]["name"] == "loxone.token-changed"
+        await call[0][0]
 
     def test_signal_swallows_callback_exception(self, conn):
         """A callback that raises must not break the token
@@ -3220,6 +3222,7 @@ class TestCoordinatorTokenCleanup:
         coordinator = LoxoneCoordinator.__new__(LoxoneCoordinator)
         coordinator.listeners = []
         coordinator.api = _FakeApi()
+        coordinator.hardware = None
 
         await coordinator.async_cleanup()
 
@@ -3241,6 +3244,7 @@ class TestCoordinatorTokenCleanup:
         coordinator = LoxoneCoordinator.__new__(LoxoneCoordinator)
         coordinator.listeners = []
         coordinator.api = _FakeApi()
+        coordinator.hardware = None
 
         await coordinator.async_cleanup(kill_token=True)
 

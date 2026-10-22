@@ -2,8 +2,7 @@ import asyncio
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (CONF_HOST, CONF_PASSWORD, CONF_PORT,
-                                 CONF_USERNAME)
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -22,12 +21,16 @@ from .const import (
     DEFAULT_VERIFY_SSL,
 )
 from .hardware import LoxoneHardwareApi, LoxoneHardwareCoordinator
+from .hardware.api import LoxoneHardwareError
 from .hardware.entity import control_device_mapping
 from .helpers import configure_hardware_control_registry
 from .miniserver import MiniServer
 from .pyloxone_api.connection import LoxoneConnection, LoxoneException
 
 _LOGGER = logging.getLogger(__name__)
+
+HARDWARE_RETRY_DELAY = 30
+HARDWARE_RETRY_MAX_DELAY = 300
 
 
 def _collect_control_uuids(structure_file: dict) -> frozenset[str]:
@@ -62,14 +65,15 @@ class LoxoneCoordinator(DataUpdateCoordinator):
         self._password = config_entry.options[CONF_PASSWORD]
         self._host = config_entry.options[CONF_HOST]
         self._port = config_entry.options[CONF_PORT]
-        self._verify_ssl = config_entry.options.get(
-            CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL
-        )
+        self._verify_ssl = config_entry.options.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
 
         self.api: LoxoneConnection | None = None
         self.miniserver: MiniServer | None = None
         self.listeners = []
         self.hardware: LoxoneHardwareCoordinator | None = None
+        self._hardware_retry_api: LoxoneHardwareApi | None = None
+        self._hardware_retry_task: asyncio.Task | None = None
+        self._closing = False
         # Control and subcontrol UUIDs from the structure file; filled
         # by ``async_config_entry_first_refresh``. See ``owns_uuid``.
         self._control_uuids: frozenset[str] = frozenset()
@@ -102,19 +106,14 @@ class LoxoneCoordinator(DataUpdateCoordinator):
             new_data = {**self.config_entry.data, **token}
             # ``async_update_entry`` is the supported way to
             # mutate a ConfigEntry's data from a coordinator.
-            self.hass.config_entries.async_update_entry(
-                self.config_entry, data=new_data
-            )
+            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
             _LOGGER.info(
-                "Persisted updated Loxone token for config entry %s "
-                "(valid until %s)",
+                "Persisted updated Loxone token for config entry %s (valid until %s)",
                 self.config_entry.entry_id,
                 token.get("valid_until", "unknown"),
             )
         except Exception as e:
-            _LOGGER.warning(
-                "Failed to persist updated token: %s", e, exc_info=True
-            )
+            _LOGGER.warning("Failed to persist updated token: %s", e, exc_info=True)
 
     async def async_config_entry_first_refresh(self) -> None:
         _LOGGER.debug("async_config_entry_first_refresh")
@@ -165,67 +164,109 @@ class LoxoneCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Could not connect to Loxone Miniserver")
             raise e
 
-        self.miniserver = MiniServer(
-            self.hass, self.api.structure_file, self.config_entry
-        )
+        self.miniserver = MiniServer(self.hass, self.api.structure_file, self.config_entry)
         self._control_uuids = _collect_control_uuids(self.api.structure_file)
 
         configure_hardware_control_registry({})
-        if self.config_entry.options.get(
-            CONF_HARDWARE_ENABLED, DEFAULT_HARDWARE_ENABLED
-        ):
+        if self.config_entry.options.get(CONF_HARDWARE_ENABLED, DEFAULT_HARDWARE_ENABLED):
+            hardware_api = LoxoneHardwareApi(
+                session=session,
+                host=self._host,
+                port=self._port,
+                username=self._username,
+                password=self._password,
+                verify_ssl=self._verify_ssl,
+                structure=self.api.structure_file,
+                manual_mappings=self.config_entry.data.get(CONF_HARDWARE_MAPPINGS, {}),
+            )
             try:
-                hardware_api = LoxoneHardwareApi(
-                    session=session,
-                    host=self._host,
-                    port=self._port,
-                    username=self._username,
-                    password=self._password,
-                    verify_ssl=self._verify_ssl,
-                    structure=self.api.structure_file,
-                    manual_mappings=self.config_entry.data.get(
-                        CONF_HARDWARE_MAPPINGS, {}
-                    ),
-                )
-                hardware_data = await hardware_api.async_discover()
-                self.hardware = LoxoneHardwareCoordinator(
-                    self.hass,
-                    self.config_entry,
-                    hardware_api,
-                    hardware_data,
-                    fast_interval=int(
-                        self.config_entry.options.get(
-                            CONF_HARDWARE_FAST_POLL_INTERVAL,
-                            DEFAULT_HARDWARE_FAST_POLL_INTERVAL,
-                        )
-                    ),
-                    inventory_interval=int(
-                        self.config_entry.options.get(
-                            CONF_HARDWARE_INVENTORY_INTERVAL,
-                            DEFAULT_HARDWARE_INVENTORY_INTERVAL,
-                        )
-                    ),
-                    battery_interval=int(
-                        self.config_entry.options.get(
-                            CONF_HARDWARE_BATTERY_INTERVAL,
-                            DEFAULT_HARDWARE_BATTERY_INTERVAL,
-                        )
-                    ),
-                )
-                self.hardware.push_connected = lambda: bool(
-                    self.api and self.api.is_connected
-                )
-                await self.hardware.async_config_entry_first_refresh()
-                configure_hardware_control_registry(
-                    control_device_mapping(self.hardware.data)
-                )
+                self.hardware = await self._async_initialize_hardware(hardware_api)
+                configure_hardware_control_registry(control_device_mapping(self.hardware.data))
             except Exception as err:
-                # Hardware inventory is additive. A firmware or permission that
-                # does not expose these endpoints must not break normal PyLoxone.
-                _LOGGER.warning("Physical hardware inventory unavailable: %s", err)
+                # Keep the main connection usable. Start recovery only after
+                # the entry's platforms and listeners have finished loading.
+                _LOGGER.warning(
+                    "Physical hardware inventory unavailable: %s. Retrying in %s s",
+                    err,
+                    HARDWARE_RETRY_DELAY,
+                )
                 self.hardware = None
+                self._hardware_retry_api = hardware_api
 
         return None
+
+    async def _async_initialize_hardware(
+        self, hardware_api: LoxoneHardwareApi, *, initial_setup: bool = True
+    ) -> LoxoneHardwareCoordinator:
+        """Discover hardware and verify its first polling cycle."""
+        hardware_data = await hardware_api.async_discover()
+        hardware = LoxoneHardwareCoordinator(
+            self.hass,
+            self.config_entry,
+            hardware_api,
+            hardware_data,
+            fast_interval=int(
+                self.config_entry.options.get(CONF_HARDWARE_FAST_POLL_INTERVAL, DEFAULT_HARDWARE_FAST_POLL_INTERVAL)
+            ),
+            inventory_interval=int(
+                self.config_entry.options.get(CONF_HARDWARE_INVENTORY_INTERVAL, DEFAULT_HARDWARE_INVENTORY_INTERVAL)
+            ),
+            battery_interval=int(
+                self.config_entry.options.get(CONF_HARDWARE_BATTERY_INTERVAL, DEFAULT_HARDWARE_BATTERY_INTERVAL)
+            ),
+        )
+        hardware.push_connected = lambda: bool(self.api and self.api.is_connected)
+        try:
+            if initial_setup:
+                await hardware.async_config_entry_first_refresh()
+            else:
+                # HA only permits first_refresh while SETUP_IN_PROGRESS. A
+                # recovery probe runs after the main entry is already loaded.
+                await hardware.async_refresh()
+                if not hardware.last_update_success:
+                    raise LoxoneHardwareError("Hardware polling has not recovered") from hardware.last_exception
+        except BaseException:
+            await hardware.async_shutdown()
+            raise
+        return hardware
+
+    def async_start_hardware_recovery(self) -> None:
+        """Retry optional hardware setup without interrupting the main connection."""
+        if self._closing or self._hardware_retry_api is None:
+            return
+        if self._hardware_retry_task is not None and not self._hardware_retry_task.done():
+            return
+        self._hardware_retry_task = self.config_entry.async_create_background_task(
+            self.hass,
+            self._async_retry_hardware(),
+            name=f"loxone hardware recovery {self.config_entry.entry_id}",
+        )
+
+    async def _async_retry_hardware(self) -> None:
+        """Probe with capped backoff and reload this entry once hardware recovers."""
+        hardware_api = self._hardware_retry_api
+        if hardware_api is None:
+            return
+        delay = HARDWARE_RETRY_DELAY
+        while not self._closing:
+            await asyncio.sleep(delay)
+            if self._closing:
+                return
+            try:
+                hardware = await self._async_initialize_hardware(hardware_api, initial_setup=False)
+            except Exception as err:
+                delay = min(delay * 2, HARDWARE_RETRY_MAX_DELAY)
+                _LOGGER.debug("Hardware recovery failed: %s. Retrying in %s s", err, delay)
+                continue
+            # No entities listen to this probe coordinator. Dispose of it before
+            # scheduling a reload, which rebuilds all platforms and mappings.
+            await hardware.async_shutdown()
+            if self._closing:
+                return
+            self._hardware_retry_api = None
+            _LOGGER.info("Physical hardware access restored; reloading %s", self.config_entry.title)
+            self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+            return
 
     def owns_uuid(self, uuid: str) -> bool:
         """Return True if ``uuid`` is a control or subcontrol of this Miniserver.
@@ -253,6 +294,17 @@ class LoxoneCoordinator(DataUpdateCoordinator):
         for good invalidates it on the Miniserver (see
         ``async_remove_entry`` in ``__init__.py``).
         """
+        self._closing = True
+        retry_task = getattr(self, "_hardware_retry_task", None)
+        if retry_task is not None and not retry_task.done():
+            retry_task.cancel()
+            try:
+                await retry_task
+            except asyncio.CancelledError:
+                pass
+        self._hardware_retry_task = None
+        self._hardware_retry_api = None
+
         if hasattr(self, "listeners"):
             # Clean up all event listeners. One bad unsubscribe must
             # not prevent the rest (or api.close() below) from running.
@@ -270,7 +322,10 @@ class LoxoneCoordinator(DataUpdateCoordinator):
             self.listeners = []
 
         if self.hardware is not None:
-            await self.hardware.async_shutdown()
+            try:
+                await self.hardware.async_shutdown()
+            except Exception as err:
+                _LOGGER.warning("Hardware shutdown failed: %s", err, exc_info=True)
 
         # Close API connection.
         if hasattr(self, "api") and self.api is not None:
@@ -283,12 +338,8 @@ class LoxoneCoordinator(DataUpdateCoordinator):
                 try:
                     await self.api.kill_token()
                 except Exception as err:  # noqa: BLE001
-                    _LOGGER.debug(
-                        "kill_token during cleanup failed: %s", err, exc_info=True
-                    )
+                    _LOGGER.debug("kill_token during cleanup failed: %s", err, exc_info=True)
             try:
                 await self.api.close()
             except Exception as err:  # noqa: BLE001
-                _LOGGER.warning(
-                    "api.close during cleanup failed: %s", err, exc_info=True
-                )
+                _LOGGER.warning("api.close during cleanup failed: %s", err, exc_info=True)

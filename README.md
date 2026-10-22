@@ -111,6 +111,15 @@ Physical hardware discovery and all polling intervals (in seconds) can be change
 in the integration options. A hardware-endpoint permission or firmware limitation is
 non-fatal: normal PyLoxone entities continue to load without the hardware layer.
 
+If hardware discovery or its first polling cycle fails during setup, PyLoxone
+retries in the background after 30, 60, 120, 240, then at most every 300 seconds.
+This includes temporary HTTP 401 responses: a hardware-only rejection does not
+discard the working WebSocket token or interrupt normal controls. Once discovery
+and the first poll succeed, only the affected integration entry reloads once to
+set up its hardware entities and mappings. Disabling or unloading the entry
+cancels pending retries. A persistent permission or firmware limitation still
+needs to be corrected; retries do not grant additional access.
+
 ## Known Limitations
 
 - Pushbuttons are stateless. They can not be used to reliably trigger automations. Use a Switch as a workaround and turn it off again in the Automation or in Loxone itself.

@@ -32,7 +32,7 @@ def test_setup_preserves_battery_interval_seconds(
     monkeypatch.setattr(coordinator_module, "LoxoneHardwareApi", Mock(return_value=hardware_api))
     monkeypatch.setattr(coordinator_module, "LoxoneHardwareCoordinator", hardware_factory)
     monkeypatch.setattr(coordinator_module, "configure_hardware_control_registry", Mock())
-    coordinator = SimpleNamespace(
+    attributes = SimpleNamespace(
         api=None,
         hass=Mock(),
         config_entry=SimpleNamespace(data={}, options=options),
@@ -43,6 +43,8 @@ def test_setup_preserves_battery_interval_seconds(
         _verify_ssl=True,
         _on_token_changed=Mock(),
     )
+    coordinator = coordinator_module.LoxoneCoordinator.__new__(coordinator_module.LoxoneCoordinator)
+    coordinator.__dict__.update(vars(attributes))
 
     asyncio.run(
         coordinator_module.LoxoneCoordinator.async_config_entry_first_refresh(coordinator),
