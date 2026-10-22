@@ -5,10 +5,28 @@
 ![HACS](https://img.shields.io/github/actions/workflow/status/MephistoJB/PyLoxone/validate.yaml?label=HACS)
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 
-This repository is independently maintained by [MephistoJB](https://github.com/MephistoJB).
-It builds on [JoDehli/PyLoxone](https://github.com/JoDehli/PyLoxone); upstream authorship
-and the MIT license are retained. Please report issues for this version in
+## Project origin and independent development
+
+This project started as a fork of [JoDehli/PyLoxone](https://github.com/JoDehli/PyLoxone).
+[MephistoJB](https://github.com/MephistoJB) has extended it with further optimizations
+and now maintains it as an independent version. These improvements include physical
+Window Handle Air discovery and diagnostics, stable hardware-to-control assignments,
+native Home Assistant window entities, configurable polling, and automatic hardware
+recovery after temporary failures. The connection and authentication improvements
+from upstream 0.10.1 are also included.
+
+Original authorship and the Apache License 2.0 are retained. Issues and feature
+requests for this independent version belong in
 [this repository](https://github.com/MephistoJB/PyLoxone/issues).
+
+## Herkunft und eigenständige Weiterentwicklung
+
+Dieses Projekt entstand als Fork von [JoDehli/PyLoxone](https://github.com/JoDehli/PyLoxone).
+[MephistoJB](https://github.com/MephistoJB) hat es um weitere Optimierungen ergänzt
+und entwickelt es nun als eigenständige Version weiter. Dazu gehören die Erkennung
+und Diagnose physischer Fenstergriffe Air, stabile Hardware-Zuordnungen, native
+Fenster-Entitäten, einstellbare Abfrageintervalle und die automatische Wiederherstellung
+der Hardware-Anbindung nach vorübergehenden Fehlern.
 
 Upstream author JoDehli can be supported here:
 
