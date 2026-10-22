@@ -44,6 +44,24 @@ Requires Home Assistant **2026.9.1 or newer**. The integration domain remains
 Version **1.0.0** is the first independent release, including upstream 0.10.1
 connection fixes and automatic recovery of the physical Air hardware layer.
 
+### Hardware HTTP 401 diagnostics (1.0.1)
+
+The next rejected physical hardware request produces a warning from
+`custom_components.loxone.hardware.api` without enabling debug logging. It records
+the known hardware endpoint and each redirect/final response: HTTP status, request
+method, whether the destination has the configured origin, and whether the actual
+Authorization header was present and matched the configured header. This helps
+distinguish missing/changed headers or redirects from a rejection despite a matching
+header; it does not by itself explain the Miniserver's reason for rejecting it.
+
+Passwords, usernames, header contents, tokens, hostnames, URL parameters, unknown
+paths, response bodies and response reasons are not included. Identical diagnostics
+are limited to one warning per minute; changed evidence is logged immediately.
+There are no additional requests, authentication retries or changes to polling,
+WebSocket updates or hardware recovery. Existing entity IDs remain unchanged.
+To roll back this diagnostic update, download version **1.0.0** in HACS and restart
+Home Assistant. Updating integration code also requires a Home Assistant restart.
+
 
 ## Config for the gen2 miniserver
 If you have the gen2 miniserver you should connect via local access. It is more reliable and faster than a cloud connection.

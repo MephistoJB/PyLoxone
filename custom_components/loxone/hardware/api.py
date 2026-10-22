@@ -3,20 +3,25 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
+import json
 import logging
 import re
 from copy import deepcopy
 from datetime import UTC, datetime, tzinfo
+from time import monotonic
 from typing import Any
 from urllib.parse import quote, urlparse
 
 from aiohttp import (
     ClientError,
+    ClientResponse,
     ClientResponseError,
     ClientSession,
     encode_basic_auth,
 )
 from defusedxml import ElementTree as DefusedElementTree
+from yarl import URL
 
 from .models import HardwareData, HardwareDevice, control_catalog
 
@@ -31,6 +36,18 @@ MAX_BATTERY_PERCENTAGE = 100
 MAX_PLAUSIBLE_SYSTEM_TEMPERATURE = 120
 HTTPS_PORT = 443
 HTTP_PORT = 80
+AUTH_DIAGNOSTIC_INTERVAL = 60
+MAX_AUTH_DIAGNOSTICS = 128
+
+
+def _diagnostic_endpoint(url: str) -> str:
+    """Allow only known hardware routes; never expose URL credentials or queries."""
+    path = urlparse(url).path.lstrip("/")
+    if path in {"jdev/sps/enumdev", "jdev/sps/enumin", "jdev/sps/enumout", "data/status"}:
+        return path
+    if re.fullmatch(r"jdev/sps/io/[0-9A-Fa-f]{8}\.[0-9A-Fa-f]{6}\.(?:AI|AQ|I|Q|ST)\d*", path):
+        return path
+    return "<other>"
 
 
 class LoxoneHardwareError(Exception):
@@ -264,9 +281,7 @@ class LoxoneHardwareApi:
         port_part = "" if port == default_port else f":{port}"
         self.base_url = f"{scheme}://{hostname}{port_part}"
         self.session = session
-        self.headers = {
-            "Authorization": encode_basic_auth(username, password, encoding="utf-8")
-        }
+        self.headers = {"Authorization": encode_basic_auth(username, password, encoding="utf-8")}
         self.verify_ssl = verify_ssl
         self.structure = structure
         self.manual_mappings = manual_mappings or {}
@@ -275,10 +290,44 @@ class LoxoneHardwareApi:
         # requested in one large burst. Keep the requests concurrent, but put
         # a deliberately small ceiling on the physical API traffic.
         self._request_semaphore = asyncio.Semaphore(2)
+        self._auth_diagnostic_times: dict[str, float] = {}
         self.miniserver_serial: str | None = None
         self.air_base: str | None = None
         self.channel_names: dict[str, str] = {}
         self.push_mapping: dict[str, tuple[str, str]] = {}
+
+    def _check_authentication(self, path: str, response: ClientResponse) -> None:
+        """Record safe request evidence before rejecting an HTTP 401 response."""
+        if response.status != 401:
+            return
+        expected = self.headers["Authorization"]
+        origin = URL(self.base_url).origin()
+        hops = []
+        for hop in (*response.history, response):
+            request = hop.request_info
+            authorization = request.headers.get("Authorization")
+            hops.append(
+                {
+                    "endpoint": _diagnostic_endpoint(str(request.real_url)),
+                    "status": hop.status,
+                    "method": request.method if request.method in {"GET", "HEAD"} else "<other>",
+                    "same_origin": request.real_url.origin() == origin,
+                    "auth_present": authorization is not None,
+                    "auth_matches_expected": authorization is not None
+                    and hmac.compare_digest(authorization.encode("utf-8"), expected.encode("utf-8")),
+                }
+            )
+        diagnostic = json.dumps({"endpoint": _diagnostic_endpoint(path), "hops": hops}, sort_keys=True)
+        now = monotonic()
+        previous = self._auth_diagnostic_times.get(diagnostic)
+        if previous is None or now - previous >= AUTH_DIAGNOSTIC_INTERVAL:
+            if len(self._auth_diagnostic_times) >= MAX_AUTH_DIAGNOSTICS:
+                self._auth_diagnostic_times.pop(next(iter(self._auth_diagnostic_times)))
+            self._auth_diagnostic_times[diagnostic] = now
+            _LOGGER.warning("Hardware HTTP 401 authentication diagnostic: %s", diagnostic)
+        # Do not propagate aiohttp's reason, URL, headers or exception chain to HA.
+        message = f"Hardware HTTP 401 at {_diagnostic_endpoint(path)} (see authentication diagnostic)"
+        raise LoxoneHardwareError(message) from None
 
     async def _request_json(self, path: str) -> dict[str, Any]:
         try:
@@ -289,6 +338,7 @@ class LoxoneHardwareApi:
                         headers=self.headers,
                         ssl=self.verify_ssl if self.base_url.startswith("https") else None,
                     ) as response:
+                        self._check_authentication(path, response)
                         response.raise_for_status()
                         return await response.json(content_type=None)
         except (TimeoutError, ClientError, ValueError) as err:
@@ -303,6 +353,7 @@ class LoxoneHardwareApi:
                         headers=self.headers,
                         ssl=self.verify_ssl if self.base_url.startswith("https") else None,
                     ) as response:
+                        self._check_authentication(path, response)
                         response.raise_for_status()
                         return await response.text()
         except (TimeoutError, ClientResponseError, ClientError) as err:
