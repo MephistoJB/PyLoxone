@@ -41,6 +41,7 @@ def test_setup_preserves_battery_interval_seconds(
         _username="test-user",
         _password="",
         _verify_ssl=True,
+        _on_token_changed=Mock(),
     )
 
     asyncio.run(
