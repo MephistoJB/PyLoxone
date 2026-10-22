@@ -1,16 +1,18 @@
 {
   "domain": "loxone",
   "name": "PyLoxone",
-  "codeowners": ["@JoDehli"],
+  "codeowners": [
+    "@MephistoJB"
+  ],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/JoDehli/PyLoxone",
+  "documentation": "https://github.com/MephistoJB/PyLoxone",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/JoDehli/PyLoxone/issues",
+  "issue_tracker": "https://github.com/MephistoJB/PyLoxone/issues",
   "requirements": [
     "websockets>=14,<16",
     "pycryptodome>=3.20",
     "defusedxml==0.7.1"
   ],
-  "version": "0.10.1"
+  "version": "1.0.0"
 }

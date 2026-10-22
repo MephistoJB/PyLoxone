@@ -1,11 +1,16 @@
 # PyLoxone
 ![Installs](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=Installations&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.loxone.total)
-[![Latest release](https://img.shields.io/github/v/release/JoDehli/PyLoxone?label=version)](https://github.com/JoDehli/PyLoxone/releases/latest)
-![Hassfest](https://img.shields.io/github/actions/workflow/status/JoDehli/PyLoxone/hassfest.yaml?label=hassfest)
-![HACS](https://img.shields.io/github/actions/workflow/status/JoDehli/PyLoxone/validate.yaml?label=HACS)
+[![Latest release](https://img.shields.io/github/v/release/MephistoJB/PyLoxone?label=version)](https://github.com/MephistoJB/PyLoxone/releases/latest)
+![Hassfest](https://img.shields.io/github/actions/workflow/status/MephistoJB/PyLoxone/hassfest.yaml?label=hassfest)
+![HACS](https://img.shields.io/github/actions/workflow/status/MephistoJB/PyLoxone/validate.yaml?label=HACS)
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 
-If you want to support my work on this binding you can buy me a coffee:
+This repository is independently maintained by [MephistoJB](https://github.com/MephistoJB).
+It builds on [JoDehli/PyLoxone](https://github.com/JoDehli/PyLoxone); upstream authorship
+and the MIT license are retained. Please report issues for this version in
+[this repository](https://github.com/MephistoJB/PyLoxone/issues).
+
+Upstream author JoDehli can be supported here:
 
 <a href="https://www.buymeacoffee.com/JoDehli" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: 41px !important;width: 174px !important;box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;-webkit-box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;" ></a>
 
@@ -15,7 +20,11 @@ Home Assistant binding for Loxone.
 A special thanks to Pawel Pieczul from the great openhab2 house automation software. 
 He really helped me a lot to with the new token based authentication. Thanks Pawel!!!
 
-#### This release works for the version 2024.1.0 and newer!!
+Requires Home Assistant **2026.9.1 or newer**. The integration domain remains
+`loxone`; existing config entries, entity IDs and hardware mappings are retained.
+
+Version **1.0.0** is the first independent release, including upstream 0.10.1
+connection fixes and automatic recovery of the physical Air hardware layer.
 
 
 ## Config for the gen2 miniserver
@@ -40,7 +49,7 @@ Change 123456789ABC to your miniserver Serial Number.
 
 ## Hacs installation
 1. Install hacs to your homeassistant installation. See https://hacs.xyz/docs/use/download/download/
-2. Add this repository to hacs: https://github.com/JoDehli/PyLoxone
+2. Add this repository to hacs: https://github.com/MephistoJB/PyLoxone
 3. Install the PyLoxone binding 
 4. Restart Home-Assistant
 5. Go to Configuration -> Integrations and search for Pyloxone
@@ -255,7 +264,7 @@ sensor:
     device_class: "temperature"    # Use device classes from homeassitant for example temperature, humidity, voltage   
     state_class: "total"           # measurement, total or total_increasing see https://developers.home-assistant.io/docs/core/entity/sensor/#long-term-statistics
 ```
-In this example a sensor with the name roomcomforttemperature (sensor.roomcomforttemperature) is created. The sensor is listening to all events from the loxone system with the specified uuid ([How do you get the uuid?](https://github.com/JoDehli/PyLoxone?tab=readme-ov-file#how-do-you-get-the-uuid)).
+In this example a sensor with the name roomcomforttemperature (sensor.roomcomforttemperature) is created. The sensor is listening to all events from the loxone system with the specified uuid ([How do you get the uuid?](https://github.com/MephistoJB/PyLoxone?tab=readme-ov-file#how-do-you-get-the-uuid)).
 
 You can also send any websocket to a loxone entity for example to increase and decrease the temperature of a room controller v2. Here is a script that raises and lowers the temperature in 0.5 °C steps:
 
