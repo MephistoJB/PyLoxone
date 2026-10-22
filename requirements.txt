@@ -4,4 +4,4 @@
 websockets>=14,<16
 pycryptodome>=3.20
 
-defusedxml==0.7.1
+defusedxml>=0.7.1
