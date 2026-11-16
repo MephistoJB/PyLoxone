@@ -44,6 +44,20 @@ Requires Home Assistant **2026.9.1 or newer**. The integration domain remains
 Version **1.0.0** is the first independent release, including upstream 0.10.1
 connection fixes and automatic recovery of the physical Air hardware layer.
 
+### Preserve newer push updates during polling (1.0.3)
+
+Each window-handle signal tracks its incoming WebSocket update revision. Before
+publishing a polling cycle, the coordinator retains any newer push values received
+while that cycle was in flight. This applies across inventory, position/vibration
+and battery/temperature requests, including unchanged push confirmations. Older
+snapshots can no longer roll those signals back or forward stale fallback values
+to mapped entities. Other signals continue to use normal polling results.
+
+Polling remains enabled as a fallback; no debounce, availability masking or changes
+to polling intervals are introduced. The previous assignment-isolation fix and
+HTTP 401 diagnostics remain included. Update through HACS and restart Home Assistant.
+Rollback: download **1.0.2** through HACS and restart again.
+
 ### Stable window-handle assignments (1.0.2)
 
 Entity platforms now receive independent deep copies of LoxAPP controls. Their

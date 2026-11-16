@@ -133,6 +133,7 @@ def test_real_platform_setup_preserves_repeated_inventory_and_push_mapping(monke
         coordinator.inventory_interval = 30
         coordinator.battery_interval = 900
         coordinator._last_slow_poll = 0
+        coordinator._push_versions = {}
         for _ in range(20):
             coordinator._last_inventory = 0
             current = await coordinator._async_update_data()

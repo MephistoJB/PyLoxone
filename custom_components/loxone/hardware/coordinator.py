@@ -48,9 +48,11 @@ class LoxoneHardwareCoordinator(DataUpdateCoordinator[HardwareData]):
         self.battery_interval = battery_interval
         self._last_inventory = time.monotonic()
         self._last_slow_poll = 0.0
+        self._push_versions: dict[tuple[str, str], int] = {}
         self.push_connected = lambda: False
 
     async def _async_update_data(self) -> HardwareData:
+        push_versions = self._push_versions.copy()
         now = time.monotonic()
         try:
             current = deepcopy(self.data)
@@ -70,12 +72,24 @@ class LoxoneHardwareCoordinator(DataUpdateCoordinator[HardwareData]):
             if now - self._last_slow_poll >= self.battery_interval:
                 current = await self.api.async_refresh_battery_and_temperature(current)
                 self._last_slow_poll = now
+            self._preserve_newer_pushes(current, push_versions)
             self._publish_mapped_values(current)
         except LoxoneHardwareError as err:
             message = f"Could not update Loxone hardware: {err}"
             raise UpdateFailed(message) from err
         else:
             return current
+
+    def _preserve_newer_pushes(self, data: HardwareData, push_versions: dict[tuple[str, str], int]) -> None:
+        """Do not let an in-flight polling snapshot roll back a newer push."""
+        for (device_id, attribute), version in self._push_versions.items():
+            if version == push_versions.get((device_id, attribute), 0):
+                continue
+            target = data.devices.get(device_id)
+            latest = self.data.devices.get(device_id)
+            if target is not None and latest is not None:
+                setattr(target, attribute, getattr(latest, attribute))
+                data.last_push = self.data.last_push
 
     def _publish_mapped_values(self, data: HardwareData) -> None:
         """Feed polled fallback values into existing PyLoxone entities."""
@@ -117,6 +131,9 @@ class LoxoneHardwareCoordinator(DataUpdateCoordinator[HardwareData]):
                 continue
             new_value = round(value) if role == "position" else bool(value)
             attribute = "position" if role == "position" else "vibration"
+            # Even an unchanged push confirms a value newer than a pending poll.
+            key = (device_id, attribute)
+            self._push_versions[key] = self._push_versions.get(key, 0) + 1
             if getattr(device, attribute) != new_value:
                 setattr(device, attribute, new_value)
                 changed = True
