@@ -7,6 +7,7 @@ https://home-assistant.io/components/loxone/
 
 import json
 import re
+from copy import deepcopy
 
 from .const import DOMAIN, cfmt
 
@@ -176,15 +177,16 @@ def get_miniserver_type(t):
 
 
 def get_all(json_data, name):
+    """Return isolated controls so platform normalization cannot modify LoxAPP."""
     controls = []
     if isinstance(name, list):
         for c in json_data["controls"].keys():
             if json_data["controls"][c]["type"] in name:
-                controls.append(json_data["controls"][c])
+                controls.append(deepcopy(json_data["controls"][c]))
     else:
         for c in json_data["controls"].keys():
             if json_data["controls"][c]["type"] == name:
-                controls.append(json_data["controls"][c])
+                controls.append(deepcopy(json_data["controls"][c]))
     return controls
 
 

@@ -44,6 +44,19 @@ Requires Home Assistant **2026.9.1 or newer**. The integration domain remains
 Version **1.0.0** is the first independent release, including upstream 0.10.1
 connection fixes and automatic recovery of the physical Air hardware layer.
 
+### Stable window-handle assignments (1.0.2)
+
+Entity platforms now receive independent deep copies of LoxAPP controls. Their
+normalization of control types, rooms, categories and nested fields no longer
+modifies the source used for subsequent hardware discovery. This fixes an inventory
+refresh loop that lost automatic handle assignments and unnecessarily reloaded the
+whole integration about every 32 seconds at the default polling settings.
+
+The fix preserves genuine inventory/mapping-change detection, polling intervals,
+WebSocket updates, authentication diagnostics and existing entity IDs. No dashboard
+or template availability masking is used. Update through HACS and restart Home
+Assistant. To roll back, download **1.0.1** through HACS and restart again.
+
 ### Hardware HTTP 401 diagnostics (1.0.1)
 
 The next rejected physical hardware request produces a warning from
